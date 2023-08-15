@@ -31,24 +31,16 @@ const SpotifyCallbackSchema = z.object({
 // In-memory session storage
 const sessions = new Map<string, SessionData>();
 
-// Session management functions
-const createSession = async (data: Omit<SessionData, 'id' | 'created_at'>) => {
-  const session: SessionData = {
-    id: uuidv4(),
-    ...data,
-    created_at: new Date()
-  };
-
-  sessions.set(session.id, session);
-  return session;
-};
-
+// Constants
 const GOOGLE_REDIRECT_URI = `${process.env.APP_URL}/api/auth/google/callback`;
 const SPOTIFY_REDIRECT_URI = `${process.env.APP_URL}/api/auth/spotify/callback`;
-// Add environment validation schema
+
+// Environment validation schema
 const envSchema = z.object({
   GOOGLE_CLIENT_ID: z.string(),
   GOOGLE_CLIENT_SECRET: z.string(),
+  SPOTIFY_CLIENT_ID: z.string(),
+  SPOTIFY_CLIENT_SECRET: z.string(),
   APP_URL: z.string().url()
 });
 
@@ -309,6 +301,142 @@ export default new Hono<AppEnv>()
       });
     } catch (error) {
       console.error('Google callback error:', error);
+      return c.json({
+        success: false,
+        error: error instanceof Error ? error.message : 'Unknown error'
+      }, 500);
+    }
+  })
+
+  // Spotify Auth Routes
+  .get('/spotify/authorize', async (c) => {
+    const html = `<!DOCTYPE html>
+    <html lang="en" class="h-full bg-gray-900">
+    <head>
+        <meta charset="UTF-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <title>Connect Spotify</title>
+        <script src="https://cdn.tailwindcss.com"></script>
+    </head>
+    <body class="h-full flex items-center justify-center">
+        <div class="max-w-md w-full mx-auto p-8">
+            <div class="text-center mb-8">
+                <svg class="w-16 h-16 mx-auto text-green-500" viewBox="0 0 24 24" fill="currentColor">
+                    <path d="M12 0C5.4 0 0 5.4 0 12s5.4 12 12 12 12-5.4 12-12S18.66 0 12 0zm5.521 17.34c-.24.359-.66.48-1.021.24-2.82-1.74-6.36-2.101-10.561-1.141-.418.122-.779-.179-.899-.539-.12-.421.18-.78.54-.9 4.56-1.021 8.52-.6 11.64 1.32.42.18.479.659.301 1.02zm1.44-3.3c-.301.42-.841.6-1.262.3-3.239-1.98-8.159-2.58-11.939-1.38-.479.12-1.02-.12-1.14-.6-.12-.48.12-1.021.6-1.141C9.6 9.9 15 10.561 18.72 12.84c.361.181.54.78.241 1.2zm.12-3.36C15.24 8.4 8.82 8.16 5.16 9.301c-.6.179-1.2-.181-1.38-.721-.18-.601.18-1.2.72-1.381 4.26-1.26 11.28-1.02 15.721 1.621.539.3.719 1.02.419 1.56-.299.421-1.02.599-1.559.3z"/>
+                </svg>
+                <h2 class="mt-6 text-3xl font-bold tracking-tight text-white">Connect your Spotify account</h2>
+                <p class="mt-2 text-sm text-gray-400">
+                    Enable music playback and control through our AI assistant
+                </p>
+            </div>
+            
+            <div class="mt-8">
+                <form id="spotify-form" class="space-y-4">
+                    <div>
+                        <input 
+                            type="text" 
+                            id="token" 
+                            required
+                            placeholder="Enter your API token" 
+                            class="w-full rounded-lg bg-gray-800 border-gray-700 px-4 py-3 text-white placeholder-gray-400 focus:ring-2 focus:ring-green-500 focus:border-transparent"
+                        >
+                    </div>
+                    <button 
+                        type="submit" 
+                        class="flex w-full justify-center items-center gap-3 rounded-lg bg-green-500 px-6 py-4 text-center text-sm font-semibold text-white shadow-sm hover:bg-green-400 focus:visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-green-500 transition-all duration-200"
+                    >
+                        <svg class="w-5 h-5" viewBox="0 0 24 24" fill="currentColor">
+                            <path d="M12 0C5.4 0 0 5.4 0 12s5.4 12 12 12 12-5.4 12-12S18.66 0 12 0zm5.521 17.34c-.24.359-.66.48-1.021.24-2.82-1.74-6.36-2.101-10.561-1.141-.418.122-.779-.179-.899-.539-.12-.421.18-.78.54-.9 4.56-1.021 8.52-.6 11.64 1.32.42.18.479.659.301 1.02zm1.44-3.3c-.301.42-.841.6-1.262.3-3.239-1.98-8.159-2.58-11.939-1.38-.479.12-1.02-.12-1.14-.6-.12-.48.12-1.021.6-1.141C9.6 9.9 15 10.561 18.72 12.84c.361.181.54.78.241 1.2zm.12-3.36C15.24 8.4 8.82 8.16 5.16 9.301c-.6.179-1.2-.181-1.38-.721-.18-.601.18-1.2.72-1.381 4.26-1.26 11.28-1.02 15.721 1.621.539.3.719 1.02.419 1.56-.299.421-1.02.599-1.559.3z"/>
+                        </svg>
+                        Connect with Spotify
+                    </button>
+                </form>
+            </div>
+    
+            <div class="mt-6 text-center text-sm text-gray-500">
+                <p>By connecting, you agree to our Terms of Service and Privacy Policy</p>
+            </div>
+        </div>
+    
+        <script>
+            document.getElementById('spotify-form').addEventListener('submit', async (e) => {
+                e.preventDefault();
+                const token = document.getElementById('token').value;
+                
+                try {
+                    const response = await fetch('${process.env.APP_URL}/api/auth/spotify', {
+                        method: 'POST',
+                        headers: {
+                            'Authorization': 'Bearer ' + token,
+                            'Content-Type': 'application/json'
+                        }
+                    });
+                    
+                    const result = await response.json();
+                    if (!result.success) {
+                        throw new Error(result.error || 'Authorization failed');
+                    }
+                    
+                    window.location.href = result.data.auth_url;
+                } catch (error) {
+                    console.error('Error:', error);
+                    alert(error.message || 'Authorization failed. Please check your token and try again.');
+                }
+            });
+        </script>
+    </body>
+    </html>`;
+      
+    return c.html(html);
+  })
+
+  .post('/spotify', async (c) => {
+    const { user } = c.get('request');
+    
+    if (!user) {
+      return c.json({ success: false, error: 'Authentication required' }, 401);
+    }
+
+    const random_state = randomBytes(16).toString('hex');
+    const combined_state = `${random_state}:${user.uuid}`;
+    const scope = 'user-read-playback-state user-modify-playback-state';
+    
+    const auth_url = new URL('https://accounts.spotify.com/authorize');
+    auth_url.searchParams.append('response_type', 'code');
+    auth_url.searchParams.append('client_id', process.env.SPOTIFY_CLIENT_ID!);
+    auth_url.searchParams.append('scope', scope);
+    auth_url.searchParams.append('redirect_uri', SPOTIFY_REDIRECT_URI);
+    auth_url.searchParams.append('state', combined_state);
+    auth_url.searchParams.append('show_dialog', 'true');
+
+    return c.json({ 
+      success: true, 
+      data: { 
+        auth_url: auth_url.toString() 
+      } 
+    });
+  })
+
+  .get('/spotify/callback', async (c) => {
+    try {
+      const code = c.req.query('code');
+      const state = c.req.query('state');
+      
+      if (!code || !state) {
+        return c.json({ success: false, error: 'Invalid callback parameters' }, 400);
+      }
+
+      const [random_state, user_uuid] = state.split(':');
+      const user = await findByUUID(user_uuid);
+      if (!user) {
+        return c.json({ success: false, error: 'User not found' }, 404);
+      }
+
+      const tokens = await spotifyService.exchangeCode(code, user_uuid);
+      
+      return c.json({ success: true, data: tokens });
+    } catch (error) {
+      console.error('Spotify callback error:', error);
       return c.json({
         success: false,
         error: error instanceof Error ? error.message : 'Unknown error'
