@@ -11,7 +11,7 @@
 
   
   <h1>Transform Your AI Workflow</h1>
-  <p>Comity AI bridges the gap between your tools and AI services, enabling seamless integration and intelligent task execution..</p>
+  <p>Comity AI bridges the gap between your tools and AI services, enabling seamless integration and intelligent task execution.</p>
 </div>
 
 <p align="center">
