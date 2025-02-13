@@ -25,6 +25,8 @@
 
 ## ✨ Why Comity?
 
+- **Universal: MacOS, Windows, and Linux compatible with iOS and Android apps on the way!**
+
 - **Zero Friction: Integrate effortlessly with your existing tools and services.**
 
 - **Smart Execution: Automatically determine the best tools and actions for each task.**
